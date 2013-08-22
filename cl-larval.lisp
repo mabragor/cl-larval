@@ -103,16 +103,21 @@ In latter case 'R' is prepended automatically"
 (define-asm-cmd startmacro (name)
   (print-asm-line ".macro" `(,name)))
 
-(define-asm-macro (defmacro-asm define-assembler-macro) (name &body body)
+(define-asm-macro (defmacro-asm define-assembler-macro) (name args &body body)
   (multiple-value-bind (forms decls doc) (sb-int::parse-body body)
-    (if decls
-	(error "Something wrong: declarations should not appear in definition of assembler macro")
-	`(progn ,(if doc
-		     `(let ((*comment* ,doc))
-			(startmacro ,(if (symbolp name) `(quote ,name))))
-		     `(startmacro ,(if (symbolp name) `(quote ,name))))
-		,@forms
-		(endmacro)))))
+    (cond (decls (error "Something wrong: declarations should not appear in definition of assembler macro"))
+	  ((> (length args) 10) (error "Only ten arguments to assembler macro required"))
+	  (t `(progn ,(if doc
+			  `(let ((*comment* ,doc))
+			     (startmacro ,(if (symbolp name) `(quote ,name))))
+			  `(startmacro ,(if (symbolp name) `(quote ,name))))
+		     (let ,(iter (for arg in args)
+				 (for i from 0)
+				 (collect `(,arg ,#?"@$(i)")))
+		       (declare (ignorable ,@args))
+		       (let ((*indent* (+ *indent* 2)))
+			 ,@forms))
+		     (endmacro))))))
     
 ;;; Commands to the controller go here
 
