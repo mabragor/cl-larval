@@ -5,7 +5,7 @@
   :description "Lisp syntax for assembler for AVR microcontrollers"
   :author "Alexander Popolitov <popolit@gmail.com>"
   :license "GPL"
-  :depends-on (#:iterate #:defmacro-enhance)
+  :depends-on (#:iterate #:defmacro-enhance #:cl-interpol #:rutils)
   :components ((:file "package")
                (:file "cl-larval")))
 
