@@ -63,7 +63,7 @@
     
 (define-asm-cmd (.db db define-byte) (label &rest exprs)
   "Define constant byte(s) in program memory of EEPROM memory"
-  (if (not (or (eq *context* :eeprom)
+  (if (not (cl:or (eq *context* :eeprom)
 	       (eq *context* :code)))
       (error ".DB directive can only appear in CODE or EEPROM contexts")
       (if (not exprs)
@@ -90,7 +90,7 @@ In latter case 'R' is prepended automatically"
 
 (define-asm-cmd (.dw dw define-word) (label &rest exprs)
   "Define constant word(s) in program memory of EEPROM memory"
-  (if (not (or (eq *context* :eeprom)
+  (if (not (cl:or (eq *context* :eeprom)
 	       (eq *context* :code)))
       (error ".DW directive can only appear in CODE or EEPROM contexts")
       (if (not exprs)
@@ -107,7 +107,7 @@ In latter case 'R' is prepended automatically"
 (define-asm-macro (defmacro-asm define-assembler-macro) (name args &body body)
   (multiple-value-bind (forms decls doc) (sb-int::parse-body body)
     (cond (decls (error "Something wrong: declarations should not appear in definition of assembler macro"))
-	  ((> (length args) 10) (error "Only ten arguments to assembler macro required"))
+	  ((cl:> (length args) 10) (error "Only ten arguments to assembler macro required"))
 	  (t `(progn ,(if doc
 			  `(let ((*comment* ,doc))
 			     (startmacro ,(if (symbolp name) `(quote ,name))))
@@ -174,8 +174,115 @@ In latter case 'R' is prepended automatically"
 		     (lwrd low-word) (hwrd high-word) page exp2 log2)
 
 
-;;; Built-in operands (Now I have absolutely no idea, how to track the parentheses in them.
-;;; More precisely, how to omit unnecessary parentheses)
+;;; Built-in operands
+
+(eval-always
+  (defparameter operators
+    '((! logical-not 14)
+      (~ bitwise-not 14)
+      ;; (- unary-minus 14)
+      (* multiplication 13)
+      (/ division 13)
+      (+ addition 12)
+      (- subtraction 12)
+      (<< shift-left 11)
+      (>> shift-right 11)
+      (< less-than 10)
+      (<= less-or-equal 10)
+      (> greater-than 10)
+      (>= greater-or-equal 10)
+      (== equal 9)
+      (!= not-equal 9)
+      (& bitwise-and 8)
+      (^ bitwise-xor 7)
+      (\| bitwise-or 6)
+      (&& logical-and 5)
+      (|| logical-or 4)))
+
+  
+  (defun precedence (x)
+    (caddr (assoc (sb-int:symbolicate (remove-if (lambda (x) (char= x #\%)) (string x))) operators)))
+
+  (defun expand-binary-respecting-precedence (symbol string operands)
+    (let ((my-precedence (precedence symbol)))
+      (iter (for operand in operands)
+	    (if (consp operand)
+		(let ((his-precedence (precedence (car operand))))
+		  (if (cl:and his-precedence (cl:< his-precedence my-precedence))
+		      (collect `(format nil "(~a)" ,operand) into res)
+		      (collect operand into res)))
+		(collect operand into res))
+	    (finally (return `(joinl ,#?" $(string) " (list ,@res)))))))
+
+  (defun expand-unary-respecting-precedence (symbol string operand)
+    (let ((expansion (if (consp operand)
+			 (let ((his-precedence (precedence (car operand))))
+			   (if (cl:and his-precedence (cl:< his-precedence (precedence symbol)))
+			       `(format nil "(~a)" ,operand)
+			       operand))
+			 operand)))
+      `(format nil "~a~a" ,string ,expansion))))
+
+(defmacro define-binary-asm-operator (symbol string)
+  `(defmacro ,symbol (&rest operands)
+     (expand-binary-respecting-precedence ',symbol ,string operands)))
+
+(defmacro define-binary-asm-operators (&rest clauses)
+  `(progn ,@(mapcar (lambda (x)
+		      `(define-binary-asm-operator ,@x))
+		    clauses)))
+
+(defmacro define-unary-asm-operator (symbol string)
+  `(defmacro ,symbol (operand)
+     (expand-unary-respecting-precedence ',symbol ,string operand)))
+
+(defmacro define-unary-asm-operators (&rest clauses)
+  `(progn ,@(mapcar (lambda (x)
+		      `(define-unary-asm-operator ,@x))
+		    clauses)))
+
+
+(define-binary-asm-operators
+    (%* "*")
+    (%+ "+")
+  (%/ "/")
+  (b- "-")
+  (%< "<")
+  (%<= "<=")
+  (%> ">")
+  (%>= ">=")
+  (%== "==")
+  (%!= "!=")
+  (%& "&")
+  (%^ "^")
+  (%\| "|")
+  (%&& "&&")
+  (%|| "||")
+  (%<< "<<")
+  (%>> ">>")
+  )
+
+(define-unary-asm-operators
+    (%! "!")
+    (%~ "~")
+  (u- "-")
+  )
+  
+(defmacro %- (&rest operands)
+  (if (equal 1 (length operands))
+      `(u- ,@operands)
+      `(b- ,@operands)))
+
+(defmacro with-asm-builtin-operators (&body body)
+  (flet ((frob-binary (symbol)
+	   `(,symbol (&rest operands)
+		     `(,',(sb-int:symbolicate #?"%$(symbol)") ,@operands)))
+	 (frob-unary (symbol)
+	   `(,symbol (operand)
+		     `(,',(sb-int:symbolicate #?"%$(symbol)") ,operand))))
+    `(macrolet ,(mapcar #'frob-binary '(* + - / < <= > >= == != & ^ \| && || << >>))
+	 (macrolet ,(mapcar #'frob-unary '(! ~))
+	   ,@body))))
 
 ;;; Commands to the controller go here
 
@@ -201,7 +308,8 @@ In latter case 'R' is prepended automatically"
   ((sbc subtract-with-carry) (dest-reg subtractee) "Subtract with Carry")
   ((sbci subtract-immediate-with-carry) (dest-reg immediate) "Subtract immediate with Carry")
   ((sbiw subtract-immediate-from-word) (dest-reg immediate) "Subtract immediate from word")
-  ;; I must define AND and OR somehow separately
+  ((and logical-and) (dest-reg other-reg) "Logical AND")
+  ((or logical-or) (dest-reg other-reg) "Logical OR")
   ((andi and-with-immediate) (dest-reg immediate) "Logical AND with Immediate")
   ((ori or-with-immediate) (dest-reg immediate) "Logical OR with Immediate")
   ((eor exclusive-or) (dest-reg other-reg) "Exclusive OR")
@@ -271,7 +379,8 @@ In latter case 'R' is prepended automatically"
   ((lpm load-program-memory) () "Load program memory")
   ((in port-in) (reg port) "In port")
   ((out port-out) (port reg) "Out port")
-  ;; PUSH and POP need to be specified somehow
+  (push (reg) "Push register on stack")
+  (pop (reg) "Pop register from stack")
   )
 
 ;;; Bit and Bit-test instructions
@@ -300,11 +409,11 @@ In latter case 'R' is prepended automatically"
   ((cls clear-sign-test) () "Clear sign test flag")
   ((sev set-overflow) () "Set two's complement overflow")
   ((clv clear-overflow) () "Clear two's complement overflow")
-  ;; I need a way to define a SET directive
+  ((set set-t) () "Set T in SREG")
   ((clt clear-t) () "Clear T in SREG")
   ((seh set-h) () "Set half-carry flag")
   ((clh clear-h) () "Clear half-carry flag")
   ((nop no-operation) () "No operation")
-  ;; I need a way to define sleep
+  (sleep ())
   ((wdr reset-watchdog) () "Watchdog reset")
   )
