@@ -4,6 +4,7 @@
   (:use #:cl #:iterate #:defmacro-enhance #:rutils.symbol)
   (:shadow #:! #:~ #:- #:* #:/ #:+ #:<< #:>> #:< #:> #:<= #:>= #:== #:!= #:& #:^ #:\| #:&& #:||
 	   #:sleep #:set #:push #:pop
-	   #:and #:or))
+	   #:and #:or)
+  (:export #:with-larval))
 
 

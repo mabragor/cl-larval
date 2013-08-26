@@ -6,11 +6,14 @@
 
 (cl-interpol:enable-interpol-syntax)
 
-(defparameter *indent* 0 "Number of spaces to insert before the line.")
-(defparameter *context* :code "Context of a program we are in. Can be :CODE, :DATA or :EEPROM")
-(defparameter *stream* t)
-(defparameter *comment* nil "Current comment to use")
-(defparameter *label* nil "Current label to use")
+(eval-always
+  (defparameter *indent* 0 "Number of spaces to insert before the line.")
+  (defparameter *context* :code "Context of a program we are in. Can be :CODE, :DATA or :EEPROM")
+  (defparameter *stream* t)
+  (defparameter *comment* nil "Current comment to use")
+  (defparameter *label* nil "Current label to use")
+  (defparameter macros-to-export nil)
+  (defparameter functions-to-export nil))
 
 (defun joinl (joinee lst)
   (format nil (concatenate 'string "~{~a~^" joinee "~}") lst))
@@ -41,7 +44,14 @@
 		,@body)
 	      ,@(mapcar (lambda (x)
 			  `(abbr ,x ,(car names)))
-			(cdr names))))))
+			(cdr names))
+	      ,@(mapcar (case type
+			  (:function (lambda (x)
+				       `(cl:push ',x functions-to-export)))
+			  (:macro (lambda (x)
+				       `(cl:push ',x macros-to-export))))
+			names)))))
+	    
 
 (defmacro define-asm-cmd (names args &body body)
   `(%define-asm-cmd :function ,names ,args ,@body))
@@ -162,10 +172,13 @@ In latter case 'R' is prepended automatically"
 (eval-always
   (defun %define-asm-builtin (symbol)
     (if (symbolp symbol)
-	`(defun ,symbol (expr)
-	   (concatenate 'string ,(string-downcase symbol) #?"($(expr))"))
+	`(progn (defun ,symbol (expr)
+		  (concatenate 'string ,(string-downcase symbol) #?"($(expr))"))
+		(cl:push ',symbol functions-to-export))
 	`(progn (eval-always ,(%define-asm-builtin (car symbol)))
-		(abbr ,(cadr symbol) ,(car symbol))))))
+		(abbr ,(cadr symbol) ,(car symbol))
+		(cl:push ',(car symbol) functions-to-export)
+		(cl:push ',(cadr symbol) functions-to-export)))))
 
 (defmacro define-asm-builtins (&rest symbols)
   `(progn ,@(mapcar #'%define-asm-builtin symbols)))
@@ -199,7 +212,9 @@ In latter case 'R' is prepended automatically"
       (&& logical-and 5)
       (|| logical-or 4)))
 
-  
+  (dolist (operator operators)
+    (cl:push (car operator) macros-to-export))
+
   (defun precedence (x)
     (caddr (assoc (sb-int:symbolicate (remove-if (lambda (x) (char= x #\%)) (string x))) operators)))
 
@@ -276,10 +291,10 @@ In latter case 'R' is prepended automatically"
 (defmacro with-asm-builtin-operators (&body body)
   (flet ((frob-binary (symbol)
 	   `(,symbol (&rest operands)
-		     `(,',(sb-int:symbolicate #?"%$(symbol)") ,@operands)))
+		     `(,',(intern #?"%$(symbol)" :cl-larval) ,@operands)))
 	 (frob-unary (symbol)
 	   `(,symbol (operand)
-		     `(,',(sb-int:symbolicate #?"%$(symbol)") ,operand))))
+		     `(,',(intern #?"%$(symbol)" :cl-larval) ,operand))))
     `(macrolet ,(mapcar #'frob-binary '(* + - / < <= > >= == != & ^ \| && || << >>))
 	 (macrolet ,(mapcar #'frob-unary '(! ~))
 	   ,@body))))
@@ -417,3 +432,18 @@ In latter case 'R' is prepended automatically"
   (sleep ())
   ((wdr reset-watchdog) () "Watchdog reset")
   )
+
+;;; External API
+
+(defmacro with-larval ((&key (stream 't)) &body body)
+  `(let ((*stream* ,stream))
+     (declare (sb-ext:disable-package-locks ,@(mapcar (lambda (x)
+							(sb-int:symbolicate x))
+						      macros-to-export)))
+     (with-asm-builtin-operators
+       (cl-curlex:abbrolet ,(mapcar (lambda (x)
+				      `(,(sb-int:symbolicate x) ,x))
+				    `(,@macros-to-export ,@functions-to-export))
+			   ,@body))))
+
+
