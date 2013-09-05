@@ -3,7 +3,7 @@ cl-larval
 
 Lisp syntax for assembler for AVR microcontrollers.
 
-Very important: there are a lot of assembler commands, that are named like CL builtin-functions,
+VERY IMPORTANT!!!: there are a lot of assembler commands, that are named like CL builtin-functions,
 e.g. PUSH, SET, *, +, etc etc.
 To make usage of this package more convenient, only a single macro, WITH-LARVAL, is exported.
 Inside the body of this macro, several functions and macros are "overloaded" with
@@ -18,8 +18,8 @@ Example:
         NIL
 
 This effect is achieved using ABBROLET ir1-translator (analog of a macro), that lives in CL-CURLEX
-package. So far ABBROLET is implemented only for SBCL, hence this package is (conveniently) usable
-under SBCL only. But of course, you can manually import all necessary symbols and use it anyways.
+package. For now it should work under SBCL, CMUCL, CCL and ECL.
+If your favorite implementation is not supported, patches are very welcome.
 
 If you still need access to CL versions of functions/macros inside the body of WITH-LARVAL,
 then construct their analogs in advance outside the body, for example:
@@ -47,3 +47,7 @@ The complete list of commands available is too long to place it here, so, please
 any assembler manual for AVR microcontrollers, or the sources of this package.
 Note, that for readability most of the short commands, such as BRHS have
 corresponding long-named versions, such as BRANCH-IF-HALF-CARRY.
+
+NOTE: to make code portable across many CL implementations, CL-PACKAGE-LOCKS
+package was used. However, so far it only really supports SBCL, but the situation
+will change in the near future.

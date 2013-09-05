@@ -37,20 +37,27 @@
   "Conveniently define several names for a command."
   (let ((names (if (atom names) (list names) names)))
     `(progn (eval-always
-	      (,(case type
-		      (:function 'defun)
-		      (:macro 'defmacro))
-		,(car names) ,args
-		,@body)
+	      ,(case type
+		     ;; KLUDGE: currently ABBROLET from CL-CURLEX does not
+		     ;; support import of global (DEFUNed) functions on some implementations,
+		     ;; but supports import of global macro.
+		     ;; Hence we define auxillary function, and macro, which expands into it.
+		     (:function `(progn (defun ,(symbolicate "%" (car names)) ,args
+					  ,@body)
+					(defmacro ,(car names) ,args
+					  ;; so far only simple lambda lists supported
+					  `(,',(symbolicate "%" (car names)) ,,@args))))
+		     (:macro `(defmacro ,(car names) ,args
+				,@body)))
 	      ,@(mapcar (lambda (x)
 			  `(abbr ,x ,(car names)))
 			(cdr names))
-	      ,@(mapcar (case type
-			  (:function (lambda (x)
-				       `(cl:push ',x functions-to-export)))
-			  (:macro (lambda (x)
-				       `(cl:push ',x macros-to-export))))
-			names)))))
+	      ,@(mapcar
+		 ;; Since we really export only macros, no need to dispatch on
+		 ;; :FUNCTION|:MACRO here.
+		 (lambda (x)
+		   `(cl:push ',x macros-to-export))
+		 names)))))
 	    
 
 (defmacro define-asm-cmd (names args &body body)
@@ -115,7 +122,7 @@ In latter case 'R' is prepended automatically"
   (print-asm-line ".macro" `(,name)))
 
 (define-asm-macro (defmacro-asm define-assembler-macro) (name args &body body)
-  (multiple-value-bind (forms decls doc) (sb-int::parse-body body)
+  (multiple-value-bind (forms decls doc) (parse-body body)
     (cond (decls (error "Something wrong: declarations should not appear in definition of assembler macro"))
 	  ((cl:> (length args) 10) (error "Only ten arguments to assembler macro required"))
 	  (t `(progn ,(if doc
@@ -172,13 +179,17 @@ In latter case 'R' is prepended automatically"
 (eval-always
   (defun %define-asm-builtin (symbol)
     (if (symbolp symbol)
-	`(progn (defun ,symbol (expr)
+	;; KLUGE also. Due to ABBROLET not supporting export of global functions,
+	;; we must define auxiallary macro layer.
+	`(progn (defun ,(symbolicate "%" symbol) (expr)
 		  (concatenate 'string ,(string-downcase symbol) #?"($(expr))"))
-		(cl:push ',symbol functions-to-export))
+		(defmacro ,symbol (expr)
+		  `(,(symbolicate "%" symbol) ,expr))
+		(cl:push ',symbol macros-to-export))
 	`(progn (eval-always ,(%define-asm-builtin (car symbol)))
 		(abbr ,(cadr symbol) ,(car symbol))
-		(cl:push ',(car symbol) functions-to-export)
-		(cl:push ',(cadr symbol) functions-to-export)))))
+		(cl:push ',(car symbol) macros-to-export)
+		(cl:push ',(cadr symbol) macros-to-export)))))
 
 (defmacro define-asm-builtins (&rest symbols)
   `(progn ,@(mapcar #'%define-asm-builtin symbols)))
@@ -216,7 +227,7 @@ In latter case 'R' is prepended automatically"
     (cl:push (car operator) macros-to-export))
 
   (defun precedence (x)
-    (caddr (assoc (sb-int:symbolicate (remove-if (lambda (x) (char= x #\%)) (string x))) operators)))
+    (caddr (assoc (intern (remove-if (lambda (x) (char= x #\%)) (string x))) operators)))
 
   (defun expand-binary-respecting-precedence (symbol string operands)
     (let ((my-precedence (precedence symbol)))
@@ -437,13 +448,13 @@ In latter case 'R' is prepended automatically"
 
 (defmacro with-larval ((&key (stream 't)) &body body)
   `(let ((*stream* ,stream))
-     (declare (sb-ext:disable-package-locks ,@(mapcar (lambda (x)
-							(sb-int:symbolicate x))
-						      macros-to-export)))
-     (with-asm-builtin-operators
-       (cl-curlex:abbrolet ,(mapcar (lambda (x)
-				      `(,(sb-int:symbolicate x) ,x))
-				    `(,@macros-to-export ,@functions-to-export))
-			   ,@body))))
+     ;; We assume that we interfere only with CL lock,
+     ;; but this is of course ad hoc assumption.
+     (cl-package-locks:with-packages-unlocked (cl)
+       (with-asm-builtin-operators
+	 (cl-curlex:abbrolet ,(mapcar (lambda (x)
+					`(,(symbolicate x) ,x))
+				      `(,@macros-to-export ,@functions-to-export))
+			     ,@body)))))
 
 
