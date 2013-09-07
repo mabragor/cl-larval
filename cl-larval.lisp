@@ -476,3 +476,24 @@ In latter case 'R' is prepended automatically"
 			     ,@body)))))
 
 
+(in-package :swank)
+
+(defmethod extract-local-op-arglists ((operator (eql 'cl-larval:with-larval)) args)
+  (append (loop for macro in cl-larval::macros-to-export
+	     collect (cons (intern (string macro))
+			   (cdr (listify-arglist (operator-arglist (string macro) "CL-LARVAL")))))
+	  (loop for function in cl-larval::functions-to-export
+	     collect (cons (intern (string function))
+			   (cdr (listify-arglist (operator-arglist (string function) "CL-LARVAL")))))))
+
+(defun listify-arglist (arglist)
+  (loop for elt in (if arglist
+		       (let ((res (cl-ppcre:split "\\s+" arglist)))
+			 (setf (car res) (subseq (car res) 1))
+			 (let ((it (car (last res))))
+			   (setf (car (last res)) (subseq it 0 (1- (length it)))))
+			 res))
+       collect (intern elt)))
+
+
+

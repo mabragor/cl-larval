@@ -53,8 +53,8 @@ package was used. However, so far it only really supports SBCL, but the situatio
 (hopefully) will change in the near future.
 
 TODO: the reason the sophisticated ABBROLET construction was used instead of a naive approach
-of a CL-DSL package is that I hope to make SLIME hint properly, when inside WITH-LARVAL form.
+of a CL-DSL package is that I wanted to make SLIME hint properly, when inside WITH-LARVAL form.
 That is, for .DB form hint should actually be "(.db label &rest exprs)" and not some
 obscure "(.db &rest args)".
-Right now I do not know how to do this (make SLIME sort-of look "inside" the WITH-LARVAL definition),
-so in case you know, please, let me know or write a patch yourself.
+Right now I've implemented somewhat "dirty" way to do so - it interns many-many symbols in target package.
+If you know, how to avoid this, let me know.
