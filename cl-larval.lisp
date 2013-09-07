@@ -33,6 +33,24 @@
 (defun empty-line ()
   (print-asm-line nil nil))
 
+(eval-always
+  (defun resubstitute-lambda-list (lambda-list)
+    "Deduce a comma-backquote expression needed to properly insert given lambda list into another call.
+     '(a b &optional c &rest d) -> `(,a ,b ,c ,@d)"
+    (multiple-value-bind (required optional rest keys) (alexandria:parse-ordinary-lambda-list lambda-list)
+      (cond ((cl:and optional keys) (error "This routine does not support mixing of &optional with &keys"))
+	    ((cl:and rest keys) (error "This routine does not support mixing of &rest and &keys"))
+	    (t (let ((req-sub ``(,,@required))
+		     (opt-sub ``(,,@(mapcar #'car optional)))
+		     (key-sub (mapcan (lambda (x)
+					(cdr ``(,',(caar x) ,,(cadar x))))
+				      keys))
+		     (rest-sub rest))
+		 (let ((base-lst ``(,,@(cdr req-sub) ,,@(cdr opt-sub) ,,@key-sub)))
+		   (if rest-sub
+		       `(append ,base-lst ,rest-sub)
+		       base-lst))))))))
+
 (defmacro %define-asm-cmd (type names args &body body)
   "Conveniently define several names for a command."
   (let ((names (if (atom names) (list names) names)))
@@ -46,7 +64,7 @@
 					  ,@body)
 					(defmacro ,(car names) ,args
 					  ;; so far only simple lambda lists supported
-					  `(,',(symbolicate "%" (car names)) ,,@args))))
+					  `(,',(symbolicate "%" (car names)) ,@,(resubstitute-lambda-list args)))))
 		     (:macro `(defmacro ,(car names) ,args
 				,@body)))
 	      ,@(mapcar (lambda (x)
@@ -179,7 +197,7 @@ In latter case 'R' is prepended automatically"
 (eval-always
   (defun %define-asm-builtin (symbol)
     (if (symbolp symbol)
-	;; KLUGE also. Due to ABBROLET not supporting export of global functions,
+	;; KLUDGE also. Due to ABBROLET not supporting export of global functions,
 	;; we must define auxiallary macro layer.
 	`(progn (defun ,(symbolicate "%" symbol) (expr)
 		  (concatenate 'string ,(string-downcase symbol) #?"($(expr))"))
