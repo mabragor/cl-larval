@@ -6,7 +6,7 @@
   :author "Alexander Popolitov <popolit@gmail.com>"
   :license "GPL"
   :depends-on (#:iterate #:cl-interpol #:rutils #:cl-curlex #:named-readtables
-			 #:alexandria #:cl-package-locks)
+			 #:alexandria #:cl-package-locks #:swank)
   :components ((:file "package")
                (:file "cl-larval")))
 
