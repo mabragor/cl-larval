@@ -6,7 +6,7 @@
 
 (cl-interpol:enable-interpol-syntax)
 
-(eval-always
+(eval-when (:compile-toplevel :load-toplevel :execute)
   (defparameter *indent* 0 "Number of spaces to insert before the line.")
   (defparameter *context* :code "Context of a program we are in. Can be :CODE, :DATA or :EEPROM")
   (defparameter *stream* t)
@@ -33,7 +33,7 @@
 (defun empty-line ()
   (print-asm-line nil nil))
 
-(eval-always
+(eval-when (:compile-toplevel :load-toplevel :execute)
   (defun resubstitute-lambda-list (lambda-list)
     "Deduce a comma-backquote expression needed to properly insert given lambda list into another call.
      '(a b &optional c &rest d) -> `(,a ,b ,c ,@d)"
@@ -54,7 +54,7 @@
 (defmacro %define-asm-cmd (type names args &body body)
   "Conveniently define several names for a command."
   (let ((names (if (atom names) (list names) names)))
-    `(progn (eval-always
+    `(progn (eval-when (:compile-toplevel :load-toplevel :execute)
 	      ,(case type
 		     ;; KLUDGE: currently ABBROLET from CL-CURLEX does not
 		     ;; support import of global (DEFUNed) functions on some implementations,
@@ -68,7 +68,7 @@
 		     (:macro `(defmacro ,(car names) ,args
 				,@body)))
 	      ,@(mapcar (lambda (x)
-			  `(abbr ,x ,(car names)))
+			  `(rutils.core:abbr ,x ,(car names)))
 			(cdr names))
 	      ,@(mapcar
 		 ;; Since we really export only macros, no need to dispatch on
@@ -194,7 +194,7 @@ In latter case 'R' is prepended automatically"
 
 ;;; Built-in functions are here
 
-(eval-always
+(eval-when (:compile-toplevel :load-toplevel :execute)
   (defun %define-asm-builtin (symbol)
     (if (symbolp symbol)
 	;; KLUDGE also. Due to ABBROLET not supporting export of global functions,
@@ -204,8 +204,8 @@ In latter case 'R' is prepended automatically"
 		(defmacro ,symbol (expr)
 		  `(,(symbolicate "%" symbol) ,expr))
 		(cl:push ',symbol macros-to-export))
-	`(progn (eval-always ,(%define-asm-builtin (car symbol)))
-		(abbr ,(cadr symbol) ,(car symbol))
+	`(progn (eval-when (:compile-toplevel :load-toplevel :execute) ,(%define-asm-builtin (car symbol)))
+		(rutils.core:abbr ,(cadr symbol) ,(car symbol))
 		(cl:push ',(car symbol) macros-to-export)
 		(cl:push ',(cadr symbol) macros-to-export)))))
 
@@ -218,7 +218,7 @@ In latter case 'R' is prepended automatically"
 
 ;;; Built-in operands
 
-(eval-always
+(eval-when (:compile-toplevel :load-toplevel :execute)
   (defparameter operators
     '((! logical-not 14)
       (~ bitwise-not 14)

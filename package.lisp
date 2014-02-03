@@ -1,7 +1,7 @@
 ;;;; package.lisp
 
 (defpackage #:cl-larval
-  (:use #:cl #:iterate #:rutils.symbol)
+  (:use #:cl #:iterate)
   (:shadowing-import-from #:named-readtables #:parse-body)
   (:shadowing-import-from #:alexandria #:symbolicate)
   (:shadow #:! #:~ #:- #:* #:/ #:+ #:<< #:>> #:< #:> #:<= #:>= #:== #:!= #:& #:^ #:\| #:&& #:||
