@@ -40,16 +40,17 @@
     (multiple-value-bind (required optional rest keys) (alexandria:parse-ordinary-lambda-list lambda-list)
       (cond ((cl:and optional keys) (error "This routine does not support mixing of &optional with &keys"))
 	    ((cl:and rest keys) (error "This routine does not support mixing of &rest and &keys"))
-	    (t (let ((req-sub ``(,,@required))
-		     (opt-sub ``(,,@(mapcar #'car optional)))
-		     (key-sub (mapcan (lambda (x)
-					(cdr ``(,',(caar x) ,,(cadar x))))
+	    (t (let ((req-sub `(list ,@required))
+		     (opt-sub `(list ,@(mapcar #'car optional)))
+		     (key-sub (mapcar (lambda (x)
+					`(list ,(caar x) ,(cadar x)))
 				      keys))
 		     (rest-sub rest))
-		 (let ((base-lst ``(,,@(cdr req-sub) ,,@(cdr opt-sub) ,,@key-sub)))
+		 (let ((base-lst `(append ,req-sub ,opt-sub ,@key-sub)))
 		   (if rest-sub
 		       `(append ,base-lst ,rest-sub)
 		       base-lst))))))))
+
 
 (defmacro %define-asm-cmd (type names args &body body)
   "Conveniently define several names for a command."
